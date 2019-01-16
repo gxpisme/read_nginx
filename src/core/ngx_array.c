@@ -9,16 +9,19 @@
 #include <ngx_core.h>
 
 
+//创建动态数组对象
 ngx_array_t *
 ngx_array_create(ngx_pool_t *p, ngx_uint_t n, size_t size)
 {
     ngx_array_t *a;
 
+    //分配动态数组头部
     a = ngx_palloc(p, sizeof(ngx_array_t));
     if (a == NULL) {
         return NULL;
     }
 
+    //分配容量为n 动态数组数据区 并将其初始化
     if (ngx_array_init(a, p, n, size) != NGX_OK) {
         return NULL;
     }
@@ -27,6 +30,7 @@ ngx_array_create(ngx_pool_t *p, ngx_uint_t n, size_t size)
 }
 
 
+//销毁数组对象，即数组所占据的内存被内存池回收
 void
 ngx_array_destroy(ngx_array_t *a)
 {
@@ -34,10 +38,12 @@ ngx_array_destroy(ngx_array_t *a)
 
     p = a->pool;
 
+    //移动内存池的last指针，释放数组所有元素所占据的内存
     if ((u_char *) a->elts + a->size * a->nalloc == p->d.last) {
         p->d.last -= a->size * a->nalloc;
     }
 
+    //释放数组首指针所占据的内存
     if ((u_char *) a + sizeof(ngx_array_t) == p->d.last) {
         p->d.last = (u_char *) a;
     }
@@ -53,8 +59,9 @@ ngx_array_push(ngx_array_t *a)
 
     if (a->nelts == a->nalloc) {
 
-        /* the array is full */
+        /* the array is full 数组满了 */
 
+        //所有元素占用的内存大小
         size = a->size * a->nalloc;
 
         p = a->pool;
@@ -63,6 +70,7 @@ ngx_array_push(ngx_array_t *a)
             && p->d.last + a->size <= p->d.end)
         {
             /*
+             * 若当前内存池的内存空间至少可容纳一个元素大小
              * the array allocation is the last in the pool
              * and there is space for new allocation
              */
@@ -71,15 +79,19 @@ ngx_array_push(ngx_array_t *a)
             a->nalloc++;
 
         } else {
-            /* allocate a new array */
+            /* allocate a new array 分配新的数组内存*/
 
+            //新的数组内存是现有的2倍
             new = ngx_palloc(p, 2 * size);
             if (new == NULL) {
                 return NULL;
             }
 
+            //首先把现有数组的所有元素复制到新的数组中
             ngx_memcpy(new, a->elts, size);
+            //数组的首地址
             a->elts = new;
+            //容纳元素的总大小
             a->nalloc *= 2;
         }
     }
@@ -87,6 +99,7 @@ ngx_array_push(ngx_array_t *a)
     elt = (u_char *) a->elts + a->size * a->nelts;
     a->nelts++;
 
+    //返回指向新增加元素的指针
     return elt;
 }
 
@@ -135,6 +148,7 @@ ngx_array_push_n(ngx_array_t *a, ngx_uint_t n)
     }
 
     elt = (u_char *) a->elts + a->size * a->nelts;
+    //加n个元素
     a->nelts += n;
 
     return elt;
