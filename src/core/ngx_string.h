@@ -44,6 +44,14 @@ typedef struct {
 #define ngx_str_null(str)   (str)->len = 0; (str)->data = NULL
 
 
+/*
+ * 字符范围 十进制表示  二进制表示
+ *   A-Z      65-90     0100 0001 - 0101 1010
+ *   a-z      97-122    0110 0001 - 0111 1010
+ *  由于0x20(2^6)该位在大写二进制中是0，小写二进制中是1
+ *  则利用 | 将大写改为小写
+ *  则利用 & ~0x20 将小写改为大写
+ */
 #define ngx_tolower(c)      (u_char) ((c >= 'A' && c <= 'Z') ? (c | 0x20) : c)
 #define ngx_toupper(c)      (u_char) ((c >= 'a' && c <= 'z') ? (c & ~0x20) : c)
 

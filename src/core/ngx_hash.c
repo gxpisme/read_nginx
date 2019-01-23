@@ -9,6 +9,13 @@
 #include <ngx_core.h>
 
 
+/**
+ * hash查找函数
+ *
+ * 假设要在hash中找到k是abc对应的值
+ * @param  key是字符串abc计算hash之后的int值
+ * @param  name是字符串abc
+ */
 void *
 ngx_hash_find(ngx_hash_t *hash, ngx_uint_t key, u_char *name, size_t len)
 {
@@ -19,17 +26,24 @@ ngx_hash_find(ngx_hash_t *hash, ngx_uint_t key, u_char *name, size_t len)
     ngx_log_error(NGX_LOG_ALERT, ngx_cycle->log, 0, "hf:\"%*s\"", len, name);
 #endif
 
+    //根据key对hash->size求余 得出索引位置 进而获得buckets中的元素elt
     elt = hash->buckets[key % hash->size];
 
     if (elt == NULL) {
         return NULL;
     }
 
+    //索引位置有值
     while (elt->value) {
+        //先判断长度是否相等  发现php源码中也有这样的比较
         if (len != (size_t) elt->len) {
             goto next;
         }
 
+        //循环key的每个字符
+        // * 假设要在hash中找到k是abc对应的值
+        // * @param  key是字符串abc计算hash之后的int值
+        // * @param  name是字符串abc
         for (i = 0; i < len; i++) {
             if (name[i] != elt->name[i]) {
                 goto next;
@@ -40,6 +54,8 @@ ngx_hash_find(ngx_hash_t *hash, ngx_uint_t key, u_char *name, size_t len)
 
     next:
 
+        //由于ngx解决hash冲突时用的开发地址法
+        //向后遍历元素
         elt = (ngx_hash_elt_t *) ngx_align_ptr(&elt->name[0] + elt->len,
                                                sizeof(void *));
         continue;
@@ -248,6 +264,11 @@ ngx_hash_find_combined(ngx_hash_combined_t *hash, ngx_uint_t key, u_char *name,
 #define NGX_HASH_ELT_SIZE(name)                                               \
     (sizeof(void *) + ngx_align((name)->key.len + 2, sizeof(void *)))
 
+/**
+ * 哈希函数初始化
+ * 其names参数是ngx_hash_key_t结构的数组 即键值对<key value>数组
+ * nelts 表示该数组元素的个数
+ */
 ngx_int_t
 ngx_hash_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t nelts)
 {
@@ -265,7 +286,13 @@ ngx_hash_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t nelts)
         return NGX_ERROR;
     }
 
+    //nelts 表示该数组元素的个数
     for (n = 0; n < nelts; n++) {
+        /**
+         * 若每个桶bucket的内存空间不足以存储一个关键字元素，则出错返回
+         * 这里考虑到了每个bucket桶最后的null指针所需的空间，即该语句中的sizeof(void *)
+         * 该指针可作为查找过程中的结束标记
+         */
         if (hinit->bucket_size < NGX_HASH_ELT_SIZE(&names[n]) + sizeof(void *))
         {
             ngx_log_error(NGX_LOG_EMERG, hinit->pool->log, 0,
@@ -276,13 +303,31 @@ ngx_hash_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t nelts)
         }
     }
 
+    /**
+     * 临时分配max_size * sizeof(u_short)的内存空间，即test数组总共有max_size个元素，即最大bucket的数量
+     * 每个元素会累计落到相应hash表位置的关键字长度
+     * 当大于256字节，即u_short所表示的字节大小
+     * 则表示bucket较少
+     */
     test = ngx_alloc(hinit->max_size * sizeof(u_short), hinit->pool->log);
     if (test == NULL) {
         return NGX_ERROR;
     }
 
+    /**
+     * 每个bucket桶实际容纳的数据大小
+     * 由于每个bucket的末尾结束标志是null
+     * 所以bucket实际容纳的数据大小必须减去一个指针所占的内存大小
+     */
     bucket_size = hinit->bucket_size - sizeof(void *);
 
+    /**
+     * 估计hash表最少bucket数量
+     * 每个关键字元素需要的内存的空间是NGX_HASH_ELT_SIZE(&name[n])，至少需要占用两个指针的大小 即2 * sizeof(void *))
+     * 这样估计hash表所需的最小bucket数量
+     * 因为关键字元素内存小，则每个bucket所容纳的关键字元素就越多
+     * 那么hash表的bucket所需的数量就越少，但至少需要一个bucket
+     */
     start = nelts / (bucket_size / (2 * sizeof(void *)));
     start = start ? start : 1;
 
@@ -290,6 +335,10 @@ ngx_hash_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t nelts)
         start = hinit->max_size - 1000;
     }
 
+    /**
+     * 以前面估算的最小bucket数量start，通过测试数组test估算hash表容纳 nelts个关键字元素所需的bucket数量
+     * 根据需求适当扩充bucket的数量
+     */
     for (size = start; size <= hinit->max_size; size++) {
 
         ngx_memzero(test, size * sizeof(u_short));
@@ -299,6 +348,7 @@ ngx_hash_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t nelts)
                 continue;
             }
 
+            /* 根据关键字元素的hash值计算存在到测试数组test对应的位置中，即计算bucket在hash表中的编号key,key取值为0～size-1 */
             key = names[n].key_hash % size;
             test[key] = (u_short) (test[key] + NGX_HASH_ELT_SIZE(&names[n]));
 
@@ -308,11 +358,16 @@ ngx_hash_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t nelts)
                           size, key, test[key], &names[n].key);
 #endif
 
+            /**
+             * test数组中对应的内存大于每个桶bucket最大内存，则需扩充bucket的数量
+             * 即在start的基础上继续增加size的值
+             */
             if (test[key] > (u_short) bucket_size) {
                 goto next;
             }
         }
 
+        //若size个bucket桶可以容纳name数组的所有关键字元素，则表示找到合适的bucket数量大小即为size
         goto found;
 
     next:
@@ -331,21 +386,31 @@ ngx_hash_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names, ngx_uint_t nelts)
 
 found:
 
+    /**
+     * 到此已经找到合适的bucket数量，即为size
+     * 重新初始化test数组元素，初始值为一个指针大小
+     */
     for (i = 0; i < size; i++) {
         test[i] = sizeof(void *);
     }
 
+    /**
+     * 计算每个bucket中关键字所占的空间，即每个bucket实际所容纳数据的大小
+     * 必须注意的是：test[i]中还有一个指针大小
+     */
     for (n = 0; n < nelts; n++) {
         if (names[n].key.data == NULL) {
             continue;
         }
 
         key = names[n].key_hash % size;
+        //根据hash值计算出关键字放在对应的test[key]中，即test[key]的大小增加一个关键字元素的大小
         test[key] = (u_short) (test[key] + NGX_HASH_ELT_SIZE(&names[n]));
     }
 
     len = 0;
 
+    //调整成对齐到cacheline的大小，并记录所有元素的总长度
     for (i = 0; i < size; i++) {
         if (test[i] == sizeof(void *)) {
             continue;
@@ -356,6 +421,7 @@ found:
         len += test[i];
     }
 
+    //向内存池申请bucket元素所占的内存空间
     if (hinit->hash == NULL) {
         hinit->hash = ngx_pcalloc(hinit->pool, sizeof(ngx_hash_wildcard_t)
                                              + size * sizeof(ngx_hash_elt_t *));
@@ -364,6 +430,7 @@ found:
             return NGX_ERROR;
         }
 
+        // 计算buckets的起始位置
         buckets = (ngx_hash_elt_t **)
                       ((u_char *) hinit->hash + sizeof(ngx_hash_wildcard_t));
 
@@ -375,6 +442,7 @@ found:
         }
     }
 
+    //分配elts，对齐到cacheline大小
     elts = ngx_palloc(hinit->pool, len + ngx_cacheline_size);
     if (elts == NULL) {
         ngx_free(test);
@@ -383,6 +451,7 @@ found:
 
     elts = ngx_align_ptr(elts, ngx_cacheline_size);
 
+    //将buckets数组与相应的elts对应起来，即设置每个bucket对应实际数据的地址
     for (i = 0; i < size; i++) {
         if (test[i] == sizeof(void *)) {
             continue;
@@ -392,10 +461,12 @@ found:
         elts += test[i];
     }
 
+    //清空test数组，以便用来累计实际数据的长度，这里不计算结尾指针的长度
     for (i = 0; i < size; i++) {
         test[i] = 0;
     }
 
+    //依次向各个bucket中填充实际数据
     for (n = 0; n < nelts; n++) {
         if (names[n].key.data == NULL) {
             continue;
@@ -409,9 +480,11 @@ found:
 
         ngx_strlow(elt->name, names[n].key.data, names[n].key.len);
 
+        //test[key]记录当前bucket内容的填充位置，即下一次填充的起始位置
         test[key] = (u_short) (test[key] + NGX_HASH_ELT_SIZE(&names[n]));
     }
 
+    //设置bucket结束位置的null指针
     for (i = 0; i < size; i++) {
         if (buckets[i] == NULL) {
             continue;
@@ -606,6 +679,7 @@ ngx_hash_wildcard_init(ngx_hash_init_t *hinit, ngx_hash_key_t *names,
 }
 
 
+//计算字符串对应的hash值
 ngx_uint_t
 ngx_hash_key(u_char *data, size_t len)
 {
@@ -614,13 +688,14 @@ ngx_hash_key(u_char *data, size_t len)
     key = 0;
 
     for (i = 0; i < len; i++) {
-        key = ngx_hash(key, data[i]);
+        key = ngx_hash(key, data[i]); //((ngx_uint_t) key * 31 + c) 得出的值乘31，在加上当前字符对应ASCII
     }
 
     return key;
 }
 
 
+//将字符转化为小写，再去计算对应的hash值
 ngx_uint_t
 ngx_hash_key_lc(u_char *data, size_t len)
 {
@@ -629,13 +704,17 @@ ngx_hash_key_lc(u_char *data, size_t len)
     key = 0;
 
     for (i = 0; i < len; i++) {
-        key = ngx_hash(key, ngx_tolower(data[i]));
+        key = ngx_hash(key, ngx_tolower(data[i])); //((ngx_uint_t) key * 31 + c) 得出的值乘31，在加上当前字符对应ASCII
     }
 
     return key;
 }
 
 
+/**
+ * 把原始关键字符串的前n个字符转换为小写字母在计算hash值
+ * 只计算前n个字符的hash值
+ */
 ngx_uint_t
 ngx_hash_strlow(u_char *dst, u_char *src, size_t n)
 {
@@ -643,14 +722,14 @@ ngx_hash_strlow(u_char *dst, u_char *src, size_t n)
 
     key = 0;
 
-    while (n--) {
+    while (n--) {   //把src字符串的前n个字符转换为小写字母
         *dst = ngx_tolower(*src);
-        key = ngx_hash(key, *dst);
+        key = ngx_hash(key, *dst); // 计算所转换的小写字母的hash值
         dst++;
         src++;
     }
 
-    return key;
+    return key; //返回整型的hash值
 }
 
 
@@ -789,7 +868,9 @@ ngx_hash_add_key(ngx_hash_keys_arrays_t *ha, ngx_str_t *key, void *value,
 
     name = ha->keys_hash[k].elts;
 
+    // 新插入元素，hash冲突
     if (name) {
+        //开放寻址
         for (i = 0; i < ha->keys_hash[k].nelts; i++) {
             if (last != name[i].len) {
                 continue;
