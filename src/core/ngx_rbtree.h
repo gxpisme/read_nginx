@@ -17,15 +17,16 @@ typedef ngx_uint_t  ngx_rbtree_key_t;
 typedef ngx_int_t   ngx_rbtree_key_int_t;
 
 
+//表示一个节点
 typedef struct ngx_rbtree_node_s  ngx_rbtree_node_t;
 
 struct ngx_rbtree_node_s {
-    ngx_rbtree_key_t       key;
-    ngx_rbtree_node_t     *left;
-    ngx_rbtree_node_t     *right;
-    ngx_rbtree_node_t     *parent;
-    u_char                 color;
-    u_char                 data;
+    ngx_rbtree_key_t       key;     //无符号整型的关键字
+    ngx_rbtree_node_t     *left;    //左子节点
+    ngx_rbtree_node_t     *right;   //右子节点
+    ngx_rbtree_node_t     *parent;  //父节点
+    u_char                 color;   //节点颜色 0黑色 1红色
+    u_char                 data;    //仅1个字节的节点数据。由于表示的空间太少，所以一般很少使用
 };
 
 
@@ -35,12 +36,16 @@ typedef void (*ngx_rbtree_insert_pt) (ngx_rbtree_node_t *root,
     ngx_rbtree_node_t *node, ngx_rbtree_node_t *sentinel);
 
 struct ngx_rbtree_s {
+    //指向树的根节点。注意，根节点也是数据元素
     ngx_rbtree_node_t     *root;
+    //指向NIL哨兵节点
     ngx_rbtree_node_t     *sentinel;
+    //表示红黑树添加元素的函数指针，它决定在添加新节点时的行为究竟是替换还是新增
     ngx_rbtree_insert_pt   insert;
 };
 
 
+//红黑树初始化
 #define ngx_rbtree_init(tree, s, i)                                           \
     ngx_rbtree_sentinel_init(s);                                              \
     (tree)->root = s;                                                         \
@@ -58,18 +63,24 @@ ngx_rbtree_node_t *ngx_rbtree_next(ngx_rbtree_t *tree,
     ngx_rbtree_node_t *node);
 
 
+//设置node节点为红色
 #define ngx_rbt_red(node)               ((node)->color = 1)
+//设置node节点为黑色
 #define ngx_rbt_black(node)             ((node)->color = 0)
+//node节点是红色
 #define ngx_rbt_is_red(node)            ((node)->color)
+//node节点是黑色
 #define ngx_rbt_is_black(node)          (!ngx_rbt_is_red(node))
+//复制n2的颜色到n1
 #define ngx_rbt_copy_color(n1, n2)      (n1->color = n2->color)
 
 
 /* a sentinel must be black */
-
+//哨兵必须是黑色
 #define ngx_rbtree_sentinel_init(node)  ngx_rbt_black(node)
 
 
+//选择红黑树中的最小值
 static ngx_inline ngx_rbtree_node_t *
 ngx_rbtree_min(ngx_rbtree_node_t *node, ngx_rbtree_node_t *sentinel)
 {

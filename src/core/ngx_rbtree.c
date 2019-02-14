@@ -15,12 +15,15 @@
  */
 
 
+//左旋转
 static ngx_inline void ngx_rbtree_left_rotate(ngx_rbtree_node_t **root,
     ngx_rbtree_node_t *sentinel, ngx_rbtree_node_t *node);
+//右旋转
 static ngx_inline void ngx_rbtree_right_rotate(ngx_rbtree_node_t **root,
     ngx_rbtree_node_t *sentinel, ngx_rbtree_node_t *node);
 
 
+//在红黑树上插入node节点
 void
 ngx_rbtree_insert(ngx_rbtree_t *tree, ngx_rbtree_node_t *node)
 {
@@ -31,6 +34,7 @@ ngx_rbtree_insert(ngx_rbtree_t *tree, ngx_rbtree_node_t *node)
     root = &tree->root;
     sentinel = tree->sentinel;
 
+    //若没有根节点，则node插入根节点，根节点为黑色
     if (*root == sentinel) {
         node->parent = NULL;
         node->left = sentinel;
@@ -43,8 +47,9 @@ ngx_rbtree_insert(ngx_rbtree_t *tree, ngx_rbtree_node_t *node)
 
     tree->insert(*root, node, sentinel);
 
-    /* re-balance tree */
+    /* re-balance tree 调整平衡树 */
 
+    //node节点不是根节点，并且node节点的父节点是红色
     while (node != *root && ngx_rbt_is_red(node->parent)) {
 
         if (node->parent == node->parent->parent->left) {
@@ -99,6 +104,7 @@ ngx_rbtree_insert_value(ngx_rbtree_node_t *temp, ngx_rbtree_node_t *node,
 {
     ngx_rbtree_node_t  **p;
 
+    //寻找插入节点的位置
     for ( ;; ) {
 
         p = (node->key < temp->key) ? &temp->left : &temp->right;
@@ -114,6 +120,7 @@ ngx_rbtree_insert_value(ngx_rbtree_node_t *temp, ngx_rbtree_node_t *node,
     node->parent = temp;
     node->left = sentinel;
     node->right = sentinel;
+    //设置节点为红色
     ngx_rbt_red(node);
 }
 
